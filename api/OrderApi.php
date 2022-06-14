@@ -1,23 +1,37 @@
 <?php
 
+/**
+ * OrderApi
+ *
+ * @var $x_auth_key
+ */
+
 //Headers
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json');
-header('X-Auth-Key: qwerty123');
 
+include_once __DIR__ . '/../config/AuthKey.php';
 include_once __DIR__ . '/../models/Order.php';
+
+//AuthKey
+$request_headers = apache_request_headers();
+$auth_key = FALSE;
+if (isset($request_headers['X-Auth-Key']) && $request_headers['X-Auth-Key'] === $x_auth_key) {
+    $auth_key = TRUE;
+}
 
 //DB
 $database = new Database();
 $db = $database->checkPdo();
+
 //Order object
 $order = new Order($db);
-getAction($order);
+getAction($order, $auth_key);
 
 /**
  * Get Action
  */
-function getAction($order)
+function getAction($order, $auth_key)
 {
     $uri = explode('/', trim($_SERVER['REQUEST_URI'], '/'));
     $key = array_search('orders', $uri);
@@ -26,7 +40,7 @@ function getAction($order)
         $key = (int)$key;
 
         if ($method === 'GET') {
-            if (!isset($uri[$key + 1]) || isset($_GET["done"])) {
+            if ((!isset($uri[$key + 1]) || isset($_GET["done"])) && $auth_key === TRUE) {
                 $done = NULL;
                 if (isset($_GET["done"])) {
                     $done = $_GET["done"];
@@ -51,7 +65,7 @@ function getAction($order)
                 $result = $order->addOrderItems($uri[$key + 1], $_POST["items"]);
                 echo json_encode(array('message' => $result));
 
-            } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'done') {
+            } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'done' && $auth_key === TRUE) {
                 $result = $order->updateOrderStatus($uri[$key + 1]);
                 echo json_encode(array('message' => $result));
 
@@ -67,6 +81,10 @@ function getAction($order)
 
 /**
  * Get Row
+ *
+ * @var $order_id
+ * @var $items
+ * @var $done
  */
 function getRow($result)
 {

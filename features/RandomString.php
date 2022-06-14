@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * class Random String
+ */
 class RandomString
 {
     /**

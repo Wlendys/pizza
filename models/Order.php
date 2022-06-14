@@ -1,15 +1,16 @@
 <?php
 
+/**
+ * class Order
+ */
 class Order
 {
     private $dbh;
     private $table = 'orders';
-
     public $id;
     public $order_id;
     public $items;
     public $done;
-
 
     /**
      * Constructor DB
