@@ -14,9 +14,8 @@ include_once __DIR__ . '/../config/AuthKey.php';
 include_once __DIR__ . '/../models/Order.php';
 
 //AuthKey
-$request_headers = apache_request_headers();
 $auth_key = FALSE;
-if (isset($request_headers['X-Auth-Key']) && $request_headers['X-Auth-Key'] === $x_auth_key) {
+if (isset($_SERVER['HTTP_X_AUTH_KEY']) && $_SERVER['HTTP_X_AUTH_KEY'] === $x_auth_key) {
     $auth_key = TRUE;
 }
 
@@ -40,42 +39,73 @@ function getAction($order, $auth_key)
         $key = (int)$key;
 
         if ($method === 'GET') {
-            if ((!isset($uri[$key + 1]) || isset($_GET["done"])) && $auth_key === TRUE) {
-                $done = NULL;
-                if (isset($_GET["done"])) {
-                    $done = $_GET["done"];
-                }
-                $result = $order->getOrders($done);
-                getRow($result);
-
-            } elseif (isset($uri[$key + 1])) {
-                $result = $order->getOrder($uri[$key + 1]);
-                getRow($result);
-
-            } else {
-                echo json_encode(array('message' => 'Error action'));
-            }
-
+            requestsGet($uri, $key, $order, $auth_key);
         } elseif ($method === 'POST') {
-            if (!isset($uri[$key + 1]) && !empty($_POST["items"])) {
-                $result = $order->createOrder($_POST["items"]);
-                getRow($result);
-
-            } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'items' && !empty($_POST["items"])) {
-                $result = $order->addOrderItems($uri[$key + 1], $_POST["items"]);
-                echo json_encode(array('message' => $result));
-
-            } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'done' && $auth_key === TRUE) {
-                $result = $order->updateOrderStatus($uri[$key + 1]);
-                echo json_encode(array('message' => $result));
-
-            } else {
-                echo json_encode(array('message' => 'Error action'));
-            }
-
+            requestsPost($uri, $key, $order, $auth_key);
         } else {
+            http_response_code(405);
             echo json_encode(array('message' => 'Error: undefined method'));
         }
+    }
+}
+
+/**
+ * Get Requests
+ */
+function requestsGet($uri, $key, $order, $auth_key) {
+    if ((!isset($uri[$key + 1]) || isset($_GET["done"])) && $auth_key === TRUE) {
+        $done = NULL;
+        if (isset($_GET["done"])) {
+            $done = $_GET["done"];
+        }
+        $result = $order->getOrders($done);
+        getRow($result);
+
+    } elseif (isset($uri[$key + 1]) && !isset($_GET["done"])) {
+        $result = $order->getOrder($uri[$key + 1]);
+        getRow($result);
+
+    } else {
+        http_response_code(404);
+        echo json_encode(array('message' => 'Error action'));
+    }
+}
+
+/**
+ * Post Requests
+ */
+function requestsPost($uri, $key, $order, $auth_key) {
+    if (!isset($uri[$key + 1])) {
+        $items = str_replace(array("\r\n", "\r", "\n"), '', file_get_contents('php://input'));
+        if ($items !== '') {
+            $items = json_decode($items);
+            $items = json_encode($items->items);
+            $result = $order->createOrder($items);
+            http_response_code(201);
+            getRow($result);
+        } else {
+            http_response_code(204);
+            echo json_encode(array('message' => 'Error: elements are missing'));
+        }
+
+    } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'items') {
+        $add_items = str_replace(array("\r\n", "\r", "\n"), '', file_get_contents('php://input'));
+        $add_items = preg_replace('/ {2,}/',' ', $add_items);
+        if ($add_items !== '') {
+            $result = $order->addOrderItems($uri[$key + 1], $add_items);
+            echo json_encode(array('message' => $result));
+        } else {
+            http_response_code(204);
+            echo json_encode(array('message' => 'Error: elements are missing'));
+        }
+
+    } elseif (isset($uri[$key + 2]) && $uri[$key + 2] === 'done' && $auth_key === TRUE) {
+        $result = $order->updateOrderStatus($uri[$key + 1]);
+        echo json_encode(array('message' => $result));
+
+    } else {
+        http_response_code(404);
+        echo json_encode(array('message' => 'Error action'));
     }
 }
 
@@ -91,18 +121,20 @@ function getRow($result)
     $num = $result->rowCount();
     if ($num > 0) {
         $orders_arr = [];
-        $orders_arr['data'] = [];
         while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
             extract($row);
             $order_item = array(
                 'order_id' => $order_id,
-                'items' => $items,
-                'done' => (bool)$done,
             );
-            array_push($orders_arr['data'], $order_item);
+            if (isset($items)) {
+                $order_item['items'] = $items;
+            }
+            $order_item['done'] = (bool) $done;
+            array_push($orders_arr, $order_item);
         }
         echo json_encode($orders_arr);
     } else {
+        http_response_code(204);
         echo json_encode(array('message' => 'The result is missing'));
     }
 }
